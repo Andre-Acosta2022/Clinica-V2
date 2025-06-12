@@ -1,80 +1,103 @@
 package com.clinic.usuarios_service.service;
 
 
-import com.clinic.usuarios_service.Client.MedicoClient;
-import com.clinic.usuarios_service.Client.PacientesClient;
-import com.clinic.usuarios_service.entity.usuarios;
-import com.clinic.usuarios_service.model.Medico;
-import com.clinic.usuarios_service.model.Pacientes;
-import com.clinic.usuarios_service.repository.UsuarioRepository;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import com.clinic.usuarios_service.entity.usuarios;
+import com.clinic.usuarios_service.repository.UsuarioRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.RequestParam;
+
+import java.security.SecureRandom;
+import java.time.LocalDateTime;
+import java.util.Optional;
+import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class UsuarioService {
-    @Autowired
-    private UsuarioRepository repository;
-    @Autowired
-    private RestTemplate restTemplate;
-    @Autowired
-    private PacientesClient pacientesClient;
-    @Autowired
-    private MedicoClient medicoClient;
-    @Autowired
-    private UsuarioRepository usuarioRepository;
 
-    public List<usuarios> getAll(){
-        return repository.findAll();
-    }
-    public usuarios getUsuarioById(Long usuario_id) {
-        // Hacer una solicitud GET al microservicio de usuarios
-        return restTemplate.getForObject("http://localhost:8081/usuarios/" + usuario_id, usuarios.class);
-    }
-    public usuarios save(usuarios usuario){
-        usuarios nuevousuario =repository.save(usuario);
-        return nuevousuario;
-    }
-    public void delete(Long id) {
-        repository.deleteById(id);
-    }
-    public usuarios update(Long id, usuarios usuarioDetalles) {
-        usuarios usuarioExistente = repository.findById(id).orElse(null);
-        if (usuarioExistente != null) {
-            usuarioExistente.setNombre(usuarioDetalles.getNombre());
-            usuarioExistente.setApellido(usuarioDetalles.getApellido());
-            usuarioExistente.setDni(usuarioDetalles.getDni());
-            usuarioExistente.setFecha_nacimiento(usuarioDetalles.getFecha_nacimiento());
-            usuarioExistente.setEmail(usuarioDetalles.getEmail());
-            usuarioExistente.setTelefono(usuarioDetalles.getTelefono());
-            usuarioExistente.setGenero(usuarioDetalles.getGenero());
-            usuarioExistente.setDireccion(usuarioDetalles.getDireccion());
-            return repository.save(usuarioExistente);
+        private final UsuarioRepository usuarioRepository;
+        private final JavaMailSender mailSender;
+        private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+
+    public usuarios crearUsuario(String nombre, String email, String role, String dni) {
+        // Verificar si el correo ya está registrado
+        Optional<usuarios> usuarioExistente = usuarioRepository.findByEmail(email);
+        if (usuarioExistente.isPresent()) {
+            throw new RuntimeException("El correo electrónico ya está registrado.");
         }
-        return null;
+
+        // Verificar si el DNI ya está registrado
+        Optional<usuarios> usuarioPorDni = usuarioRepository.findByDni(dni);
+        if (usuarioPorDni.isPresent()) {
+            throw new RuntimeException("El DNI ya está registrado.");
+        }
+
+        // Generar la contraseña temporal
+        String rawPassword = generarPassword(10);  // Llama al generador de contraseña
+        String encodedPassword = passwordEncoder.encode(rawPassword);
+
+        // Generar token y tiempo de expiración
+        String token = UUID.randomUUID().toString();
+        LocalDateTime expiracion = LocalDateTime.now().plusHours(24);
+
+        // Crear el objeto usuario
+        usuarios usuario = usuarios.builder()
+                .nombre(nombre)
+                .email(email)
+                .role(role)
+                .password(encodedPassword)
+                .activo(false) // pendiente activación
+                .tokenActivacion(token)
+                .tokenExpira(expiracion)
+                .build();
+
+        // Guardar el usuario en la base de datos
+        usuarioRepository.save(usuario);
+
+        // Enviar correo con la contraseña temporal
+        enviarCorreo(email, rawPassword);  // Aquí envías el correo con la contraseña temporal
+
+        return usuario;
     }
 
+    private void enviarCorreo(String email, String rawPassword) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(email);
+        message.setSubject("Credenciales de acceso - Clínica");
+        message.setText("Su usuario ha sido creado.\n\nContraseña temporal: " + rawPassword +
+                "\nPor favor, cambie su contraseña en el primer inicio de sesión.");
+        mailSender.send(message);
+    }
+        private String generarPassword(int length) {
+            String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%&*!";
+            SecureRandom random = new SecureRandom();
+            StringBuilder sb = new StringBuilder();
+            for(int i=0; i<length; i++) {
+                int idx = random.nextInt(chars.length());
+                sb.append(chars.charAt(idx));
+            }
+            return sb.toString();
+        }
+    public ResponseEntity<String> cambiarContrasena(@RequestParam String email, @RequestParam String nuevaPassword) {
+        Optional<usuarios> usuarioOpt = usuarioRepository.findByEmail(email);
+        if (usuarioOpt.isEmpty()) {
+            return ResponseEntity.badRequest().body("El usuario no existe.");
+        }
 
-    public List<Pacientes> getPaciente(Long usuario_id) {
-        List<Pacientes> pacientes = restTemplate.getForObject("http://localhost:8082/paciente/usuario" + usuario_id, List.class);
-        return pacientes;
-    }
-    public List<Medico> getMedico(Long usuario_id){
-        List<Medico> medicos= restTemplate.getForObject("http://localhost:8083/medico/usuario"+usuario_id,List.class);
-        return medicos;
-    }
-    public Pacientes savePacientes(Long usuario_id,Pacientes paciente){
-        paciente.setUsuarioId(usuario_id);
-        Pacientes nuevopaciente =pacientesClient.save(paciente);
-        return paciente;
-    }
-    public Medico saveMedico(Long usuario_id, Medico medico){
-        medico.setUsuarioId(usuario_id);
-        Medico nuevoMedico =medicoClient.save(medico);
-        return medico;
+        usuarios usuario = usuarioOpt.get();
+        if (!usuario.isActivo()) {
+            return ResponseEntity.badRequest().body("La cuenta no está activa.");
+        }
+
+        usuario.setPassword(passwordEncoder.encode(nuevaPassword));
+        usuarioRepository.save(usuario);
+
+        return ResponseEntity.ok("Contraseña cambiada exitosamente.");
     }
 }

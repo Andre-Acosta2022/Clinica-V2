@@ -3,10 +3,7 @@ package com.clinic.usuarios_service.entity;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Pattern;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedBy;
@@ -20,8 +17,8 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @NoArgsConstructor
 @Entity
-@Getter
-@Setter
+@Data
+@Builder
 @Table(name="usuarios")
 @EntityListeners(AuditingEntityListener.class)
 public class usuarios {
@@ -57,8 +54,12 @@ public class usuarios {
     @OneToOne(cascade = CascadeType.ALL, optional = false)
     @JoinColumn(name = "id")
     private Direccion direccion;
+    private String role; // Ejemplo: DOCTOR, PACIENTE
 
-    @Column(nullable = false)
-    private boolean deleted = false;
+    private String password; // contraseña cifrada
+
+    private boolean activo;
+    private String tokenActivacion;
+    private LocalDateTime tokenExpira;
 
 }

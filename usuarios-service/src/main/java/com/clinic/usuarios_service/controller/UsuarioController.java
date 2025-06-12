@@ -1,95 +1,61 @@
 package com.clinic.usuarios_service.controller;
-
 import com.clinic.usuarios_service.entity.usuarios;
-import com.clinic.usuarios_service.model.Medico;
-import com.clinic.usuarios_service.model.Pacientes;
-import com.clinic.usuarios_service.service.UsuarioService;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.clinic.usuarios_service.repository.UsuarioRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.web.bind.annotation.RequestMapping;
+import java.time.LocalDateTime;
+import java.util.Optional;
 
-import java.util.List;
-import java.util.Map;
+import com.clinic.usuarios_service.service.UsuarioService;
+
 
 @RestController
 @RequestMapping("/api/usuarios")
+@RequiredArgsConstructor
 public class UsuarioController {
     @Autowired
-    private UsuarioService usuarioService;
+    private final UsuarioRepository usuarioRepository;
+    @Autowired
+    private final BCryptPasswordEncoder passwordEncoder;
+    @Autowired
+    private final UsuarioService usuarioService;
 
-    @GetMapping
-    public ResponseEntity<List<usuarios>> listarUsuarios(){
-        List<usuarios> usuario=usuarioService.getAll().reversed();
-        if (usuario.isEmpty()){
-            return ResponseEntity.noContent().build();
+    @PostMapping("/crear")
+    public ResponseEntity<usuarios> crearUsuario(@RequestParam String nombre,
+                                                 @RequestParam String email,
+                                                 @RequestParam String role,
+                                                 @RequestParam String dni) {
+        usuarios usuarioCreado = usuarioService.crearUsuario(nombre, email, role, dni);
+        return ResponseEntity.ok(usuarioCreado);
+    }
+    @PostMapping("/activar")
+    public ResponseEntity<String> activarCuenta(@RequestParam String token,
+                                                @RequestParam String nuevaPassword) {
+        Optional<usuarios> optUsuario = usuarioRepository.findByTokenActivacion(token);
+        if (optUsuario.isEmpty()) {
+            return ResponseEntity.badRequest().body("Token inválido");
         }
-        return ResponseEntity.ok(usuario);
-    }
-    @GetMapping("/{id}")
-    public ResponseEntity<usuarios> obtenerUsuarios(@PathVariable("id")Long id){
-        usuarios usuario= usuarioService.getUsuarioById(id);
-        if (usuario == null){
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(usuario);
-    }
-    @PostMapping
-    public ResponseEntity<usuarios> guardarUsuario(@RequestBody usuarios usuario) {
-        usuarios nuevousuario = usuarioService.save(usuario);
-        return ResponseEntity.ok(nuevousuario);
-    }
-    @PutMapping("/{id}")
-    public ResponseEntity<usuarios> editarUsuario(@PathVariable("id") Long id, @RequestBody usuarios usuarioDetalles) {
-        usuarios usuarioActualizado = usuarioService.update(id, usuarioDetalles);
-        if (usuarioActualizado == null) {
-            return ResponseEntity.notFound().build(); // Si el usuario no existe, retorna 404
-        }
-        return ResponseEntity.ok(usuarioActualizado); // Retorna el usuario actualizado
-    }
+        usuarios usuario = optUsuario.get();
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> eliminarUsuario(@PathVariable("id") Long id) {
-        usuarios usuario = usuarioService.getUsuarioById(id);
-        if (usuario == null) {
-            return ResponseEntity.notFound().build(); // Usuario no encontrado
-        }
-        usuarioService.delete(id);  // Eliminar usuario
-        return ResponseEntity.noContent().build(); // Retorna código 204 (sin contenido) para indicar éxito
-    }
-
-    /*---------------------------------*/
-    @GetMapping("/pacientes/{usuario_id}")
-    public ResponseEntity<List<Pacientes>> listarPacientes(@PathVariable("usuario_id") Long id){
-        usuarios usuario = usuarioService.getUsuarioById(id);
-        if(usuario == null) {
-            return ResponseEntity.notFound().build();
+        if (usuario.getTokenExpira().isBefore(LocalDateTime.now())) {
+            return ResponseEntity.badRequest().body("Token expirado");
         }
 
-        List<Pacientes> pacientes = usuarioService.getPaciente(id);
-        return ResponseEntity.ok(pacientes);
+        usuario.setPassword(passwordEncoder.encode(nuevaPassword));
+        usuario.setActivo(true);
+        usuario.setTokenActivacion(null);
+        usuario.setTokenExpira(null);
+        usuarioRepository.save(usuario);
+
+        return ResponseEntity.ok("Cuenta activada correctamente");
     }
 
-    @GetMapping("/Medico/{usuario_id}")
-    public ResponseEntity<List<Medico>> listarMedicos(@PathVariable("usuario_id") Long id){
-        usuarios usuario = usuarioService.getUsuarioById(id);
-        if(usuario == null) {
-            return ResponseEntity.notFound().build();
-        }
-
-        List<Medico> medicos = usuarioService.getMedico(id);
-        return ResponseEntity.ok(medicos);
+    public ResponseEntity<String> cambiarContrasena(@RequestParam String token, @RequestParam String nuevaContrasena) {
+        usuarioService.cambiarContrasena(token, nuevaContrasena);
+        return ResponseEntity.ok("Contraseña cambiada exitosamente");
     }
-
-    @PostMapping("/pacientes/{usuario_id}")
-    public ResponseEntity<Pacientes> guardarPaciente(@PathVariable("usuario_id") Long usuario_id,@RequestBody Pacientes paciente){
-        Pacientes nuevopaciente = usuarioService.savePacientes(usuario_id,paciente);
-        return ResponseEntity.ok(nuevopaciente);
-    }
-
-    @PostMapping("/medico/{usuario_id}")
-    public ResponseEntity<Medico> guardarMoto(@PathVariable("usuarioId") Long usuario_id,@RequestBody Medico medico){
-        Medico nuevaMedico = usuarioService.saveMedico(usuario_id, medico);
-        return ResponseEntity.ok(nuevaMedico);
-    }
-
 }

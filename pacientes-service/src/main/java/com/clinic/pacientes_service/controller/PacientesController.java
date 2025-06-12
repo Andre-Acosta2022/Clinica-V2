@@ -1,6 +1,5 @@
 package com.clinic.pacientes_service.controller;
 
-import com.clinic.pacientes_service.DTO.PacienteResponse;
 import com.clinic.pacientes_service.entity.Pacientes;
 import com.clinic.pacientes_service.service.PacientesService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,9 +59,5 @@ public class PacientesController {
         return ResponseEntity.noContent().build(); // Retorna código 204 (sin contenido) para indicar éxito
     }
 
-    @GetMapping("/{usuario_id}")
-    public ResponseEntity<PacienteResponse> obtenerPacienteConDatos(@PathVariable("usuario_id") Long usuarioId) {
-        PacienteResponse respuesta = pacienteService.obtenerPacienteConDatos(usuarioId);
-        return ResponseEntity.ok(respuesta);
-    }
+
 }
